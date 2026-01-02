@@ -7,5 +7,5 @@ type Vertex struct {
 }
 
 func printMap(m map[string]Vertex) {
-	fmt.Println(m)
+	fmt.Println(m)  
 }
