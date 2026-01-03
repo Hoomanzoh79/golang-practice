@@ -1,10 +1,24 @@
 package main
 
+import "fmt"
+
 func main() {
-	m := make(map[string]Vertex)
-	m["Tehran"] = Vertex{
-		Lat:  35.6892,
-		Long: 51.3890,
+	pos, neg := Adder(), Adder()
+	for i := range 10 {
+		fmt.Println(
+			pos(i),
+			neg(-2*i),
+		)
 	}
-	printMap(m)
 }
+//results are 
+// 0 0
+// 1 -2
+// 3 -6
+// 6 -12
+// 10 -20
+// 15 -30
+// 21 -42
+// 28 -56
+// 36 -72
+// 45 -90
