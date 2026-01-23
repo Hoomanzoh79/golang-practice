@@ -10,6 +10,7 @@ type Person struct{
 	LastName string
 }
 
+// Example for joining errors 
 func (p Person) Validator() (Person,error) {
 	var myErrors []error
 	if len(p.FirstName) == 0 {
@@ -25,10 +26,26 @@ func (p Person) Validator() (Person,error) {
 	return p,nil
 }
 
+// Example for variadic parameters
+func Sum(numbers ... int) int{
+	mySum := 0 
+	for _,num := range(numbers) {
+		mySum += num
+	}
+	return mySum
+}
+
 func main(){
 	p := Person{"",""}
 	_,err := p.Validator()
 	if err != nil{
 		fmt.Println(err)
 	}
+	nums := make([]int,3)
+	nums = append(nums, 1,4,10)
+	// you can either pass a slice like this
+	fmt.Println(Sum(nums...))
+	// or you can pass multiple variables like this 
+	// (variadic params will handle this and make it a slice)
+	fmt.Println(Sum(1,4,10))
 }
