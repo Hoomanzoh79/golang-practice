@@ -5,47 +5,66 @@ import (
 	"fmt"
 )
 
-type Person struct{
+type Employee struct{
+	ID int
 	FirstName string
 	LastName string
+	Address string
 }
 
-// Example for joining errors 
-func (p Person) Validator() (Person,error) {
-	var myErrors []error
-	if len(p.FirstName) == 0 {
-		myErrors = append(myErrors, errors.New("first name can't be empty"))
-	}
-	if len(p.LastName) == 0 {
-		myErrors = append(myErrors, errors.New("last name can't be empty"))
-	}
-	if len(myErrors) > 0{
-		// variadic parameters (...) is used because errors.Join() expects it
-		return Person{},errors.Join(myErrors...)
+const InvalidID string = "Invalid ID"
+const EmptyField string = "Empty Field"
+
+// sentinel error
+var ErrInvalidID error = errors.New(InvalidID)
+
+// custom error 
+type EmptyFieldError struct{
+	Field string
+	Message string
+}
+func (err EmptyFieldError) Error() string {
+	return err.Message
+}
+
+func validateEmployee(emp Employee) error {
+	var errorsSlice[] error
+	if emp.ID < 0 || emp.ID > 1000 {
+		errorsSlice = append(errorsSlice, ErrInvalidID)
 	} 
-	return p,nil
+	if emp.FirstName == "" {
+		errorsSlice = append(errorsSlice, EmptyFieldError{Field: "ّFirstName",Message: EmptyField})
+	}
+	if emp.LastName == "" {
+		errorsSlice = append(errorsSlice, EmptyFieldError{Field: "LastName",Message: EmptyField})
+	}
+	if emp.Address == "" {
+		errorsSlice = append(errorsSlice, EmptyFieldError{Field: "Address",Message: EmptyField})
+	}
+	return errors.Join(errorsSlice...)
 }
 
-// Example for variadic parameters
-func Sum(numbers ... int) int{
-	mySum := 0 
-	for _,num := range(numbers) {
-		mySum += num
+func main() {
+	testCases := []Employee{
+		{ID: 0, FirstName: "John", LastName: "Doe", Address: "123 Main St"},
+		{ID: 1, FirstName: "", LastName: "Smith", Address: "456 Oak Ave"},
+		{ID: 2, FirstName: "Jane", LastName: "", Address: ""},
+		{ID: -1, FirstName: "", LastName: "", Address: ""},
+		{ID: 3, FirstName: "Bob", LastName: "Johnson", Address: "789 Pine Rd"},
 	}
-	return mySum
-}
-
-func main(){
-	p := Person{"",""}
-	_,err := p.Validator()
-	if err != nil{
-		fmt.Println(err)
+	for _,emp := range testCases{
+		err := validateEmployee(emp)
+		if err != nil {
+			if errors.Is(err,ErrInvalidID){
+				fmt.Printf("Invalid ID for %+v \n",emp)
+			}
+			var emptyFieldErr EmptyFieldError
+			if errors.As(err,&emptyFieldErr) {
+				fmt.Printf("Found empty field error: %s\n", emptyFieldErr.Field)
+			}
+			fmt.Printf("Validation errors: %s\n", err.Error())
+		} else {
+			fmt.Println("Validation passed")
+		}
 	}
-	nums := make([]int,3)
-	nums = append(nums, 1,4,10)
-	// you can either pass a slice like this
-	fmt.Println(Sum(nums...))
-	// or you can pass multiple variables like this 
-	// (variadic params will handle this and make it a slice)
-	fmt.Println(Sum(1,4,10))
 }
