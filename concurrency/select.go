@@ -1,61 +1,111 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
-// fibonacci generates fibonacci numbers and sends them to channel c
-// It stops when it receives a signal on the quit channel
-func fibonacci(c, quit chan int) {
-	x, y := 0, 1  // Starting values for fibonacci sequence
-	
-	// Infinite loop - will be terminated by the quit signal
-	for {
-		select {
-		// TRY TO SEND the current fibonacci number to channel c
-		// This case will ONLY succeed if someone is ready to RECEIVE from channel c
-		// If no one is receiving (channel is blocked), this case won't execute
-		case c <- x:
-			// We successfully sent x! Now update for next fibonacci number
-			x, y = y, x+y
-			
-		// TRY TO RECEIVE from the quit channel
-		// This case will ONLY succeed if someone has SENT to the quit channel
-		// If no one has sent (channel is empty), this case won't execute
-		case <-quit:
-			// We received the quit signal! Time to stop
-			fmt.Println("quit")
-			return  // Exit the function completely
-		}
-		// The select statement will keep trying these two operations
-		// It blocks until ONE of them can succeed
+type SafeKeep struct {
+	mu sync.Mutex
+	urls map[string]bool
+}
+
+type Fetcher interface {
+	// Fetch returns the body of URL and
+	// a slice of URLs found on that page.
+	Fetch(url string) (body string, urls []string, err error)
+}
+
+var sk = SafeKeep{urls:make(map[string]bool)}
+
+// Crawl uses fetcher to recursively crawl
+// pages starting with url, to a maximum of depth.
+func Crawl(url string, depth int, fetcher Fetcher,wg *sync.WaitGroup) {
+	// TODO: Fetch URLs in parallel.
+	// TODO: Don't fetch the same URL twice.
+	// This implementation doesn't do either:
+	if depth <= 0 {
+		wg.Done()
+		return
 	}
+	sk.mu.Lock()
+	_,ok := sk.urls[url]
+	if !ok {
+		sk.urls[url] = true
+		sk.mu.Unlock()
+	}else{
+		wg.Done()
+		sk.mu.Unlock()
+		return
+	}
+	body, urls, err := fetcher.Fetch(url)
+	if err != nil {
+		fmt.Println(err)
+		wg.Done()
+		return
+	}
+	fmt.Printf("found: %s %q\n", url, body)
+	var wg_ = sync.WaitGroup{}
+	for _, u := range urls {
+		wg_.Add(1)
+		go Crawl(u, depth-1, fetcher,&wg_)
+	}
+	wg_.Wait()
+	wg.Done()
 }
 
 func main() {
-	// Create two UNBUFFERED channels
-	// Unbuffered channels require perfect synchronization:
-	// - A send operation BLOCKS until someone is ready to receive
-	// - A receive operation BLOCKS until someone is ready to send
-	c := make(chan int)    // Channel for sending fibonacci numbers
-	quit := make(chan int) // Channel for sending quit signal
-	
-	// Start a new goroutine (concurrent execution)
-	go func() {
-		// This goroutine will RECEIVE 10 fibonacci numbers
-		for i := 0; i < 10; i++ {
-			// TRY TO RECEIVE from channel c
-			// This will BLOCK until fibonacci() tries to send (c <- x)
-			fmt.Println(<-c)
-		}
-		// After receiving 10 numbers, send quit signal
-		// TRY TO SEND 0 to quit channel
-		// This tells fibonacci() to stop generating numbers
-		quit <- 0
-		// Goroutine exits after this
-	}()
-	
-	// Call fibonacci in the MAIN goroutine (not as a goroutine)
-	// This will block here until fibonacci() returns (after receiving quit signal)
-	fibonacci(c, quit)
-	
-	// When fibonacci() returns, main() ends and program exits
+	var wg = sync.WaitGroup{}
+	wg.Add(1)
+	go Crawl("https://golang.org/", 4, fetcher,&wg)
+	wg.Wait()
+}
+
+// fakeFetcher is Fetcher that returns canned results.
+type fakeFetcher map[string]*fakeResult
+
+type fakeResult struct {
+	body string
+	urls []string
+}
+
+func (f fakeFetcher) Fetch(url string) (string, []string, error) {
+	if res, ok := f[url]; ok {
+		return res.body, res.urls, nil
+	}
+	return "", nil, fmt.Errorf("not found: %s", url)
+}
+
+// fetcher is a populated fakeFetcher.
+var fetcher = fakeFetcher{
+	"https://golang.org/": &fakeResult{
+		"The Go Programming Language",
+		[]string{
+			"https://golang.org/pkg/",
+			"https://golang.org/cmd/",
+		},
+	},
+	"https://golang.org/pkg/": &fakeResult{
+		"Packages",
+		[]string{
+			"https://golang.org/",
+			"https://golang.org/cmd/",
+			"https://golang.org/pkg/fmt/",
+			"https://golang.org/pkg/os/",
+		},
+	},
+	"https://golang.org/pkg/fmt/": &fakeResult{
+		"Package fmt",
+		[]string{
+			"https://golang.org/",
+			"https://golang.org/pkg/",
+		},
+	},
+	"https://golang.org/pkg/os/": &fakeResult{
+		"Package os",
+		[]string{
+			"https://golang.org/",
+			"https://golang.org/pkg/",
+		},
+	},
 }
