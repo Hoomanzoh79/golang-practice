@@ -5,29 +5,107 @@ import (
 	"sync"
 )
 
-var counter int 
-var wg = sync.WaitGroup{}
+type SafeKeep struct {
+	mu sync.Mutex
+	urls map[string]bool
+}
+
+type Fetcher interface {
+	// Fetch returns the body of URL and
+	// a slice of URLs found on that page.
+	Fetch(url string) (body string, urls []string, err error)
+}
+
+var sk = SafeKeep{urls:make(map[string]bool)}
+
+// Crawl uses fetcher to recursively crawl
+// pages starting with url, to a maximum of depth.
+func Crawl(url string, depth int, fetcher Fetcher,wg *sync.WaitGroup) {
+	// TODO: Fetch URLs in parallel.
+	// TODO: Don't fetch the same URL twice.
+	// This implementation doesn't do either:
+	if depth <= 0 {
+		wg.Done()
+		return
+	}
+	sk.mu.Lock()
+	_,ok := sk.urls[url]
+	if !ok {
+		sk.urls[url] = true
+		sk.mu.Unlock()
+	}else{
+		wg.Done()
+		sk.mu.Unlock()
+		return
+	}
+	body, urls, err := fetcher.Fetch(url)
+	if err != nil {
+		fmt.Println(err)
+		wg.Done()
+		return
+	}
+	fmt.Printf("found: %s %q\n", url, body)
+	var wg_ = sync.WaitGroup{}
+	for _, u := range urls {
+		wg_.Add(1)
+		go Crawl(u, depth-1, fetcher,&wg_)
+	}
+	wg_.Wait()
+	wg.Done()
+}
 
 func main() {
-	ch := make(chan int)
-	wg.Add(2)
-	// This is my channel reciever Goroutine
-	// The <- points out of the channel meaning we want to recieve
-	// This would work the same without the function arguement but wouldn't be as clear
-	go func (ch <-chan int) {
-		for i := range ch {
-			fmt.Println(i)
-		}
-		wg.Done()
-	}(ch)
-	// This is my channel sender Goroutine
-	// The <- points towards the channel meaning we want to send
-	// This would work the same without the function arguement but wouldn't be as clear
-	go func (ch chan<- int){
-		ch <- 43
-		ch <- 26
-		close(ch)
-		wg.Done()
-	}(ch)
+	var wg = sync.WaitGroup{}
+	wg.Add(1)
+	go Crawl("https://golang.org/", 4, fetcher,&wg)
 	wg.Wait()
+}
+
+// fakeFetcher is Fetcher that returns canned results.
+type fakeFetcher map[string]*fakeResult
+
+type fakeResult struct {
+	body string
+	urls []string
+}
+
+func (f fakeFetcher) Fetch(url string) (string, []string, error) {
+	if res, ok := f[url]; ok {
+		return res.body, res.urls, nil
+	}
+	return "", nil, fmt.Errorf("not found: %s", url)
+}
+
+// fetcher is a populated fakeFetcher.
+var fetcher = fakeFetcher{
+	"https://golang.org/": &fakeResult{
+		"The Go Programming Language",
+		[]string{
+			"https://golang.org/pkg/",
+			"https://golang.org/cmd/",
+		},
+	},
+	"https://golang.org/pkg/": &fakeResult{
+		"Packages",
+		[]string{
+			"https://golang.org/",
+			"https://golang.org/cmd/",
+			"https://golang.org/pkg/fmt/",
+			"https://golang.org/pkg/os/",
+		},
+	},
+	"https://golang.org/pkg/fmt/": &fakeResult{
+		"Package fmt",
+		[]string{
+			"https://golang.org/",
+			"https://golang.org/pkg/",
+		},
+	},
+	"https://golang.org/pkg/os/": &fakeResult{
+		"Package os",
+		[]string{
+			"https://golang.org/",
+			"https://golang.org/pkg/",
+		},
+	},
 }
